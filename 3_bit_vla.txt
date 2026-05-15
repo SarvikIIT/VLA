@@ -1,0 +1,1394 @@
+BitVLA: 1-bit Vision-Language-Action Models for
+Robotics Manipulation
+Hongyu Wang Chuyan Xiong Ruiping Wang ∗ Xilin Chen
+Key Laboratory of AI Safety, Institute of Computing Technology, Chinese Academy of Sciences
+University of Chinese Academy of Sciences.
+Latency
+0
+200
+400
+OpenVLA-OFT+ Pi-0 BitVLA
+4.4 x
+Real World
+0 20 40 60 80
+OpenVLA-OFT Pi-0 BitVLA
+OOD
+SFT
+Memory Usage
+0
+5
+10
+15
+20
+OpenVLA-OFT Pi-0 BitVLA
+11 x
+Reduction
+Only 1.4G
+-1 0 +1
+Simulation
+50 70 90
+OpenVLA-OFT Pi-0 BitVLA
+0
+100
+200
+300
+400
+OpenVLA-OFT+ Pi-0 BitVLA
+Throughput
+4.4 x
+BitVLA
+Fig. 1: We introduce BitVLA, the first fully native 1-bit vision-language-action (VLA) model for robotic manipulation, in which
+every parameter is ternary, i.e., {−1,0,1} . With the proposed Quantize-then-Distill stage, we compress the full-precision vision
+encoder to 1.58-bit weights with INT8 activations after multimodal training. Experiments show that BitVLA outperforms π0 [4]
+at similar parameter counts and achieves performance comparable to the larger OpenVLA-OFT [ 18]. Meanwhile, BitVLA
+requires only 1.4 GB memory and delivers a4.4×speedup over OpenVLA-OFT.
+Abstract—Deploying powerful Vision-Language-Action (VLA)
+models on edge devices is limited by their massive size. In this
+paper, we take a deployment-oriented view of VLA training:
+we target efficiency through model design and optimization,
+rather than relying solely on post-hoc compression. Thus, we
+propose BitVLA, a fully native 1-bit VLA model for robotic
+manipulation, where every parameters is ternary, i.e., {−1,0,1} .
+BitVLA is built on the publicly available 1-bit LLM BitNet
+b1.58 2B4T, and is trained as a vision-language-action policy
+that inherits the compactness of 1-bit pretraining while retaining
+strong task performance. To further reduce the memory footprint
+of the vision backbone, we introduce Quantize-then-Distill, a post-
+training quantization-aware training strategy that compresses
+a full-precision vision encoder to 1.58-bit weights, while a
+full-precision teacher guides representation alignment during
+training. Across simulation benchmarks and real-world tasks,
+BitVLA matches the performance of the full-precision OpenVLA-
+OFT baseline, while reducing model memory by 11.0× and
+end-to-end latency by 4.4×. These results suggest a practical
+path toward training-time efficiency–accuracy co-design for
+embodied policies, enabling competitive manipulation capability
+on memory-constrained edge robotic platforms. We release the
+code in https://github.com/ustcwhy/BitVLA, model weights in
+https://huggingface.co/lxsy/bitvla-bf16.
+I. INTRODUCTION
+Recent years have seen rapid progress in Vision-Language
+Models (VLMs) [ 14, 54, 42, 1], which exhibit strong gen-
+*Correspondence to: Ruiping Wang, wangruiping@ict.ac.cn.
+eralization across a wide range of vision-language tasks,
+including visual question answering [ 25, 26], mathematical
+reasoning [ 51, 37], and human–agent interaction [ 12, 33].
+Building upon these advances, Vision-Language-Action (VLA)
+models [5, 56, 10, 30, 17, 21] have emerged as a promising
+paradigm for learning generalist robot policies by extending
+VLMs with action generation for robotic control. The key
+to this paradigm lies in transferring the representation and
+instruction-following capabilities of VLM backbones to robotic
+manipulation, together with architectural designs that effectively
+couple multimodal perception and language understanding with
+action decoding. Nonetheless, the rapid scaling of VLA models
+has brought a growing tension between research progress and
+practical deployment, as real-world robotic systems, especially
+edge platforms, often operate under strict constraints in memory,
+compute throughput, and energy budget. Therefore, an essential
+question for the field now is:how can we build VLA models
+that are both capable and deployable under tight resource
+constraints?
+However, developing deployable VLA models faces two
+primary challenges in the aspects of model efficiency and
+training methodology. First, existing VLA models are typically
+large-scale and rely on full-precision parameters, leading to
+prohibitive memory footprints and latency when deployed
+on embedded or mobile robotic hardware. Although post-
+arXiv:2506.07530v2  [cs.RO]  1 Mar 2026training quantization [ 9] can partially alleviate this issue, it
+often introduces non-trivial accuracy drops and requires careful
+calibration, and it is not always aligned with the optimization
+dynamics of the original training process. Second, while
+extreme low-bit modeling has recently shown encouraging
+results in the language domain, its extension to multimodal
+perception and robotic control remains under-explored. In
+particular, 1-bit LLMs [ 38, 28, 29], whose parameters are
+restricted to ternary values (i.e., {−1,0,1} ), demonstrate that
+aggressive quantization can significantly reduce inference cost
+and improve hardware efficiency while preserving competitive
+performance. Yet, translating such benefits to VLA models is
+non-trivial, since VLA training involves tightly coupled vision-
+language alignment and action prediction, where quantization-
+induced representation mismatch may severely affect end-task
+success. These challenges suggest that efficient deployment
+should not be treated solely as a post-hoc compression problem,
+but instead calls for training-time co-design that integrates
+quantization with model learning for robotics.
+In this work, we present BitVLA, to the best of our
+knowledge, the first fully native 1-bit Vision-Language-Action
+model for robotic manipulation, where all model parameters
+are ternary, i.e., {−1,0,1} . BitVLA is built upon the publicly
+available 1-bit LLM BitNet b1.58 2B4T [ 29], and adopts
+a deployment-oriented training pipeline that couples low-bit
+modeling with multimodal learning. Specifically, we first train
+a vision-language model by pairing the 1-bit LLM with a
+full-precision vision encoder following the LLaV A training
+paradigm [ 25]. To further reduce the memory footprint of
+the vision backbone, we introduce Quantize-then-Distill, a
+lightweight quantization-aware training strategy that com-
+presses the full-precision vision encoder to 1.58-bit weights
+with 8-bit activations after large-scale multimodal pre-training.
+During this stage, the full-precision encoder serves as a teacher
+model to better align latent representations, while we only
+update the vision encoder to preserve the stability of the
+low-bit language backbone. Crucially, this design integrates
+quantization into the training process, enabling the model
+to learn representations that are inherently compatible with
+efficient deployment. Then, following the OpenVLA [ 17]
+paradigm, we perform robotics pre-training on ∼1M real-world
+robot trajectories, establishing the first 1-bit VLA model.
+We extensively evaluate BitVLA on robotic manipulation
+benchmarks. Notably, Fig. 1 shows that BitVLA achieves end-
+task performance comparable to the state-of-the-art OpenVLA-
+OFT [ 18] on both LIBERO benchmark and real-world ex-
+periments, while reducing model memory by 11.0× and
+end-to-end latency by 4.4×. These results demonstrate that
+BitVLA provides a practical route toward deployment-ready
+VLA policies under stringent memory budgets, and high-
+light the promise of training-time efficiency–performance co-
+optimization for embodied robot learning. Furthermore, since
+BitVLA is trained with ternary weight and INT8 activations, its
+linear transformations have one order of magnitude less floating-
+point operations (e.g., multiply-then-add), which significantly
+reduces the arithmetic energy [ 52] and opens the door for
+designing specific accelerators optimized for 1-bit VLAs. In
+summary, our paper highlights the following contributions:
+1) We introduce BitVLA, the first fully native 1-bit VLA
+model for robotic manipulation, establishing a new
+extreme low-bit baseline for embodied policies.
+2) We propose Quantize-then-Distill, a lightweight
+quantization-aware training strategy that compresses the
+vision encoder to 1.58-bit weights while maintaining
+representation alignment and end-task performance.
+3) We demonstrate competitive manipulation success with
+substantially reduced memory footprint and latency,
+suggesting an effective pathway for deploying VLA
+models on memory-constrained robotic edge systems.
+II. RELATEDWORKS
+Efficient Foundation Models for Robotics.Inspired by the
+rapid progress of vision–language models (VLMs), robotics
+researchers have begun exploring vision–language–action
+(VLA) models [ 56, 31, 17, 21, 18] that directly generate low-
+level control signals. To improve inference efficiency, recent
+work [ 45, 13, 35] typically builds VLA policies on smaller
+VLM backbones. To boost task performance, TinyVLA[ 45],
+VLA-Adapter [43], and EvO-1 [ 22] propose enhanced adap-
+tation and decoding mechanisms (e.g., dual-system designs
+and diffusion-based action heads), whereas NORA [ 13] and
+SmolVLA [ 35] emphasize stronger base VLMs and higher-
+quality or larger-scale data for VLA training. In this work,
+we focus on efficiency from first principles, i.e., co-designing
+quantization and training to reduce the cost of the underlying
+computation. These two lines of work can be combined to
+further improve deployment efficiency, which we would like
+to explore in future work.
+Native 1-bit models.Modern deep learning research is increas-
+ingly focused on quantization-aware training and low-precision
+inference [32, 46, 27]. Recent studies [ 38, 28, 15, 55, 39, 40]
+have demonstrated the potential of 1-bit (i.e., binary or ternary)
+pre-training for LLMs. [ 38] empirically showed that the per-
+formance gap between 1-bit and full-precision models narrows
+as the parameter count increases. Further, BitNet b1.58 [ 28]
+showed that 1.58-bit LLMs can match the performance of full-
+precision models starting from the 3B scale, while significantly
+reducing inference costs in terms of memory footprint, decoding
+latency, and energy consumption. OneBit [ 47] further explored
+the use of knowledge distillation for training binary LLMs.
+More recently, [ 29] trained a 2B-parameter ternary LLM,
+achieving competitive performance relative to leading open-
+weight LLMs. The low memory and energy requirements
+of 1-bit LLMs make them particularly attractive for edge
+applications, especially for robotics tasks. However, to the
+best of our knowledge, the extension of 1-bit models to vision-
+language and vision-language-action training remains largely
+unexplored.
+III. BITVLA: 1-BITVL
+In this section, we describe the architecture of BitVLA and
+its training methodology. We first present the model design1-bit LLM
+BF16
+ViT
+1-bit LLM
+1-bit Attn
+1-bit MLP
+BF16 Attn
+BF16 MLP
+BitVLA
+OFT head
+1-bit LLM
+BF16
+ViT
+1-bit
+ViT
+BF16
+ViT
+MSE
+Student Model Teacher Model
+CECECE
+Trainable
+Frozen
+Quantize-then-DistillMultimodal Training
+Robotics Training
+Fig. 2:Overview of the three-stage training pipeline in BitVLA.We first perform multimodal training with a 1-bit LLM
+and a full-precision vision encoder, then apply Quantize-then-Distill to compress the vision encoder to 1.58-bit weights (INT8
+activations) while preserving multimodal alignment, and finally conduct robotics training on large-scale cross-embodiment
+trajectories for downstream manipulation.
+and the quantization functions for weights and activations in
+Section III-A. We then detail the overall training pipeline in
+Section III-B.
+A. Model Architecture
+We instantiate the 1-bit VLA model BitVLA as a unified
+multimodal policy πθ that maps visual observations and lan-
+guage context to robot actions under a fully quantized backbone.
+Concretely, BitVLA adopts BitNet b1.58 2B4T [29] as the 1-bit
+LLM backbone and uses SigLIP-L [ 49] as the vision encoder.
+We employ the SigLIP-L variant pre-trained at 224×224
+resolution, which yields only 256 visual token sequences and
+improves computational efficiency with negligible performance
+impact [17]. The vision features are projected into the language
+embedding space via a lightweight two-layer MLP connector
+with GeLU activations, which we keep in full precision due to
+its negligible parameter and memory footprint.
+Unified policy formulation.Given the observation at time
+t, we denote the multimodal input as ot = [I t, qt], where It
+is the (single- or multi-view) image observation andq t is the
+robot proprioceptive state. Let ℓt denote the language context,
+which is an overall task instruction (e.g., “clear the table”). The
+policy produces an action chunk at:t+h over a short horizon
+h. The distribution represented by BitVLA can be written as
+πθ(ˆat:t+h |o t, ℓt), where ˆat:t+h is decoded from a unified
+transformer that operates on an interleaved multimodal token
+sequence. Specifically, we tokenize the input into a sequence
+x1:N consisting of text tokens xw
+i from ℓt, visual tokens xI
+i
+from SigLIP-L applied to It, and optional robot state tokens
+xq
+i derived from qt through a small projection. We decode
+continuous robot actions through an action head conditioned
+on the corresponding hidden states. In our implementation,
+the connector and action head remain full precision, while
+the LLM backbone is ternary (1.58-bit) by design and the
+vision encoder is quantized to low-bit through the proposed
+Quantize-then-distill stage.
+Quantization of weights and activations.For quantization,
+we employ theabsmeanquantizer for weights and the per-
+tokenabsmaxquantizer for activations [ 28]. The weights are
+quantized to ternary values {−1,0,1} and activations are
+quantized to symmetric INT8 in [−128,127] . Formally, we
+define
+Qw(W) = RoundClip
+ W
+α ,−1,1
+
+, α= 1
+nm ∥W∥ 1,(1)
+Qa(x) = RoundClip
+ 127x
+β ,−128,127
+
+, β=∥x∥ ∞,
+(2)
+RoundClip(x, a, b) = max
+ 
+a,min(b,round(x))
+
+,(3)
+where W∈R m×n denotes the learnable weight of a linear
+layer and x∈R n×1 denotes its input activation. As shown in
+Fig. 3, the output of a quantized linear layer is computed as:
+Y= 127α
+β Qw(W)Q a(x),(4)
+where Qw(·) and Qa(·) denote the quantization functions for
+weights and activations, respectively. We apply quantization
+to all linear layers in the vision encoder and LLM, excludingAQ
+WQ
+DQ
+Y (BF16)
+ α
+ β
+X (INT8)
+W (ternary)
+Fig. 3:Overview of the forward computation for a linear
+transformation in BitVLA.After training, weights are offline
+quantized to ternary values. During inference, we online
+quantize activations to INT8 and invoke a custom kernel to
+multiply ternary weights with INT8 inputs. We then apply
+per-element scaling factors α and β to rescale the output to
+full precision.
+the input and output embedding layers. During inference, we
+adopt the custom kernel from BitBLAS [ 41] to perform the
+matrix multiplicationQ w(W)Q a(x).
+B. Training Paradigm
+Fig. 2 summarizes the training paradigm of BitVLA, which
+integrates quantization into the learning process to obtain a
+fully native 1-bit VLM before robotics adaptation. The overall
+pipeline consists of three stages: (i) multimodal training to es-
+tablish a stable vision-language initialization with a 1-bit LLM
+and a full-precision vision encoder, (ii) Quantize-then-Distill
+stage to compress the vision encoder into 1.58-bit weights
+with 8-bit activations while preserving multimodal alignment,
+and (iii) robotics training to acquire cross-embodiment ma-
+nipulation knowledge from large-scale trajectories and adapt
+to downstream tasks. Throughout the pipeline, we explicitly
+control which modules are trainable at each stage to stabilize
+optimization under aggressive quantization.
+a) Multimodal Training:Following LLaV A [ 25], we first
+construct a vision-language model by pairing the 1-bit LLM
+backbone with a full-precision vision encoder and a lightweight
+connector. This stage follows a two-step recipe: we first train
+only the connector on a small image-caption corpus to align
+the visual token space with the language embedding space.
+Then we freeze the vision encoder and optimize the remaining
+modules to improve instruction-following ability.
+b) Quantize-then-Distill:We then perform knowledge
+distillation to quantize the vision encoder to 1.58-bit weights
+and 8-bit activations. As shown in Fig. 2, we initialize the
+1.58-bit student encoder from its full-precision counterpart,
+while the full-precision encoder is kept as a fixed teacher.
+During this stage, we update only the student vision encoder,
+and keep the 1-bit LLM backbone and connector frozen. The
+student vision encoder utilizes the quantization function shown
+in Section III-A, and straight-through-estimator [2] for gradient
+approximation. The overall objective combines the language
+modeling objective for instruction-following with an auxiliary
+representation alignment loss:
+Ltotal =L LM +λL aux,(5)
+where λ trades off task supervision and teacher-student repre-
+sentation matching.
+Language modeling lossWe adopt the standard autoregressive
+language modeling objective. Let T denote the input text
+sequence, consisting of an instruction prefix Tins and an answer
+suffix Tans. Let V1.58 denote the visual tokens produced by the
+1.58-bit student encoder. We compute the loss only on the
+answer tokens:
+LLM =−
+X
+i∈Tans
+logp(y i | V1.58,T <i),(6)
+where yi is the ground-truth token at position i and T<i denotes
+all preceding text tokens (including Tins). Visual tokens and
+instruction tokens serve as context and are not included in the
+loss.
+Representation alignment lossTo mitigate the representation
+drift induced by quantization and preserve multimodal align-
+ment, we distill intermediate features from the full-precision
+teacher encoder. Let hl
+bf16 and hl
+1.58 denote the hidden states
+produced by the l-th layer of the teacher and student encoders,
+respectively. We define the auxiliary alignment loss as:
+Laux = 1
+L
+LX
+l=1
+1
+n
+hl
+bf16 −h l
+1.58
+2
+2 ,(7)
+where L is the number of layers and n is the hidden dimension.
+This loss encourages the low-bit student to match the teacher’s
+representational behavior, improving stability and downstream
+instruction-following performance after quantization. In our
+experiments, we observe that, unlike the 1.58-bit pre-training
+of LLMs, the quantization-aware training of 1.58-bit encoder
+is highly data-efficient with distillation from a full-precision
+teacher model. It preserves most of the performance of its full-
+precision counterpart using only billions of training tokens.
+c) Robotics Training:After Quantize-then-distill stage,
+both the vision encoder and the LLM operate with 1.58-bit
+weights and 8-bit activations. To endow BitVLA with generaliz-
+able manipulation priors that transfer across embodiments and
+environments, we pre-train it with an autoregressive next-action
+prediction objective [ 17]. Concretely, each action dimension
+is discretized independently into 256 bins, and the model is
+trained to minimize the cross-entropy loss between the predicted
+action tokens and the ground-truth action sequence. We curate
+a large-scale robotics pre-training corpus based on Open X-
+Embodiment [17, 34], resulting in∼1M training samples.
+After pre-training, we perform supervised fine-tuning to
+adapt the model to downstream tasks. Following OpenVLA-
+OFT [18], BitVLA uses parallel decoding with action chunking
+to improve inference throughput for real-time control. Rather
+than predicting a single action token per step, the modelTABLE I:Success rates (%) on LIBERO simulation.Comparison between BitVLA and prior VLA baselines (reported from
+their original papers). Models are grouped by parameter count (Large vs. Small).
+Models Size Memory Usage↓ Spatial Object Goal Long Average
+Large
+OpenVLA [17] 7.5B 15.1GB (10.79×) 84.7 88.4 79.2 53.7 76.5
+CoT-VLA [53] 8.0B 16.2GB (11.57×) 87.5 91.6 87.6 69.0 81.1
+UniVLA [6] 8.5B 17.0GB (12.14×) 96.5 96.8 95.6 92.0 95.2
+UnifiedVLA [44] 8.5B 17.0GB (12.14×) 95.4 98.8 93.6 94.0 95.5
+OpenVLA-OFT [18] 7.7B 15.4GB (11.00×) 97.6 98.4 97.9 94.5 97.1
+Small
+SpatialVLA [34] 4.2B 8.5GB (6.07×) 88.2 89.9 78.6 55.5 78.1
+NORA-Long [13] 3.8B 7.5GB (5.36×) 92.2 95.4 89.4 74.6 87.9
+4D-VLA [50] 4.1B 8.3GB (5.93×) 88.9 95.2 90.9 79.1 88.6
+SmolVLA [35] 2.3B 4.6GB (3.29×) 93.0 94.0 91.0 77.0 88.8
+GROOT-N1 [3] 2.2B 4.4GB (3.14×) 94.4 97.6 93.0 90.6 93.9
+π0 [4] 3.5B 7.0GB (5.00×) 96.8 98.8 95.8 85.2 94.2
+BitVLA w/o pre-training 3.0B 1.4GB (1.00×) 97.4 99.6 94.4 87.6 94.8
+BitVLA 3.0B 1.4GB (1.00×) 96.6 99.0 95.4 92.8 96.0
+TABLE II:Success rates (%) on LIBERO simulation.
+Comparison between BitVLA and OpenVLA, OpenVLA-
+OFT under post-training quantization (INT8/INT4). BitVLA
+achieves competitive performance with a 1.4 GB memory
+footprint.
+Models Memory Usage↓Spatial Object Goal Long Avg.
+INT8 post-training quantization
+OpenVLA [17] 7.4GB (5.29×) 86.4 85.2 77.2 58.8 76.9
+OpenVLA-OFT [18]7.7GB (5.50×) 98.8 98.0 96.6 94.0 96.7
+INT4 post-training quantization
+OpenVLA [17] 4.4GB (3.14×) 83.0 84.0 72.0 51.6 72.7
+OpenVLA-OFT [18]4.7GB (3.36×) 98.2 98.2 97.2 93.8 96.9
+BitVLA (ours) 1.4GB (1.00×) 96.6 99.0 95.4 92.8 96.0
+outputs an action chunk ˆat:t+h in a single forward pass,
+producing temporally coherent multi-step commands while
+substantially reducing decoding overhead compared to token-
+by-token autoregressive generation. Different from OpenVLA-
+OFT, we observe that replacing the causal attention mask in
+BitNet b1.58 with a bi-directional mask leads to a noticeable
+performance drop on real-world tasks. We therefore retain the
+original causal attention structure in the LLM backbone. This
+choice preserves end-task performance and further enables
+efficient training and inference with Flash-Attention [8].
+We optimize the model with an L1 regression objective
+between the predicted actions and the ground-truth trajectories:
+Lact =
+hX
+k=0
+∥ˆat+k −a t+k∥1 .(8)
+This objective directly encourages accurate multi-step action
+prediction under the chunked decoding scheme.
+IV. EXPERIMENTS
+A. Pre-training Setup
+BitVLA is trained with a three-stage procedure. Following
+LLaV A [25], we train BitVLA with a three-stage VLM
+curriculum that progressively. In visual alignment, we train only
+the connector on LLaV A-1.5-558k [26] to align the SigLIP-L
+features with the 1-bit LLM embedding space, using a peak
+learning rate of 1×10 −3 and a batch size of 256. In visual
+instruction tuning, we freeze the vision encoder and train the
+LLM together with the connector on a 10M-sample single-
+image subset of MammoTH-VL [ 11], with a peak learning
+rate of 3×10 −4 and a batch size of 256. In Quantize-then-
+distill stage, we compress the vision encoder from full precision
+(W16A16) to 1.58-bit weights and 8-bit activations (W1.58A8),
+using a 5M-sample subset comprising up to 10B tokens. The
+representation distillation loss is weighted by γ= 0.1 . This
+three-stage VLM training takes 7 days on 8 NVIDIA H800
+GPUs (80GB each).
+For VLA pre-training, we use a subset of Open X-
+Embodiment [17, 34] with over one million samples. The peak
+learning rates are set to 3×10 −4 for the LLM and 1×10 −4
+for the ViT, and we train for 200K steps with a batch size of
+2048. The full pre-training takes 14 days on 16 NVIDIA H800
+GPUs (80GB each). Detailed hyperparameter configurations
+are provided in the supplementary material.
+B. Experiments on Simulation Environment
+Implementation and Evaluation details.We fine-tune BitVLA
+on the same dataset and protocol as OpenVLA-OFT [ 18]. The
+model consumes synchronized multi-view observations from a
+wrist-mounted camera and an external camera, together with
+proprioceptive signals such as end-effector positions. We project
+the physical state measurements into a single state token via an
+MLP-based projector, and append this token to the sequence of
+image tokens. For action chunking, we follow OpenVLA-OFT
+and set the chunk size to K= 8 , executing each full chunk
+before re-planning.
+We adopt the LIBERO simulation environment [ 24] to evalu-
+ate the generalization and performance of robotics manipulation
+models. Each task suite contains 500 expert demonstrations
+systematically distributed across 10 distinct manipulation tasks.
+Concretely, we fine-tune for 10K steps on Spatial, Object, and
+Goal, and for 100K steps on Long, using a cosine learning-
+rate decay schedule with a batch size of 64. Additional
+implementation details and hyperparameters are provided in
+the supplementary material.
+Main results.We compare BitVLA against representative0 0
+22.5
+85 80
+50
+75 70
+45
+75
+95
+65
+Grasp the watermelon on
+the table
+Put the bread into the
+basket
+Flip the bell upright 0
+20
+40
+60
+80
+Average
+BitVLA (w/o pre-training)
+BitVLA
+Pi-0
+OpenVLA-OFT
+Fig. 4:Real-world robot experiments.We evaluate three tasks: “Grasp the watermelon on the table,” “Put the bread into the
+basket,” and “Flip the bell upright” to assess three axes of policy capability. BitVLA outperforms π0 on all three tasks and
+achieves performance comparable to the larger OpenVLA-OFT model.
+baselines under supervised fine-tuning on the LIBERO bench-
+mark. For clarity, we group the compared methods by model
+scale. Table I summarizes the success rates of BitVLA and all
+baselines across the LIBERO suites. We first observe that large-
+scale robot pre-training consistently improves performance
+on challenging long-horizon tasks such as LIBERO-Long.
+In particular, BitVLA without robotic pre-training achieves
+87.6% success on LIBERO-Long, which is 5.2% lower than
+the pre-trained variant. Moreover, BitVLA outperforms strong
+3B-parameter baselines, including π0 and SmolVLA. Notably,
+BitVLA exceeds π0 by 7.6% on LIBERO-Long, highlighting its
+advantage in long-horizon manipulation. Compared to the larger
+OpenVLA-OFT model, BitVLA attains comparable overall
+LIBERO performance with only a 1.1% absolute reduction,
+while using an 11 × smaller memory footprint. In practice,
+BitVLA requires only 1.4 GB of memory, enabling deployment
+on consumer-grade GPUs, such as the NVIDIA GeForce RTX
+3050 Ti Laptop GPU (4 GB).
+Comparison with post-training quantization.We further
+compare BitVLA to OpenVLA and OpenVLA-OFT under
+8-bit and 4-bit post-training quantization. We evaluate the
+publicly released fine-tuned checkpoints from Hugging Face
+and quantize the model backbones to INT8 and INT4 using
+bitsandbytes [9]. We report both memory footprint and LIBERO
+performance for all quantized variants. As shown in Table II,
+OpenVLA suffers a larger performance drop under 4-bit
+quantization than OpenVLA-OFT. In contrast,BitVLA achieves
+performance comparable to 4-bit quantized OpenVLA-OFT
+while using less than one-third of the memory, illustrating the
+benefit of integrating low-bit constraints into training rather
+than relying on post-hoc quantization alone.
+C. Experiments on Real-world Tasks
+To evaluate the real-world performance of BitVLA and
+the efficacy of its pretrained representations, we conducted
+extensive physical robot experiments.
+Implementation and Evaluation details.Our experimental
+platform comprises a 7-DoF Franka Emika robotic arm and a
+RealSense D435i camera. The camera is mounted to provide
+a global, third-person perspective of the workspace. The
+observation space includes raw RGB images and the robot’s
+proprioceptive states (e.g., joint positions and gripper state). To
+facilitate fine-tuning, expert demonstrations were collected via
+teleoperation using a 3Dconnexion SpaceMouse. The training
+procedure was conducted on an NVIDIA H800 GPU, utilizing a
+batch size of 64 and action chunk size of 10. During real-world
+evaluation, we adopted a distributed inference architecture. The
+VLAs are hosted on a remote server equipped with an NVIDIA
+A800 GPU, while the robot control loop communicates with
+the server over the network to retrieve real-time action outputs.
+We designed three core manipulation tasks along with their
+Out-of-Distribution (OOD) variants. For each base task, we
+collected expert demonstrations from 50 randomized initial
+positions for fine-tuning. During the evaluation phase, we
+defined a 4 ×5 grid within a designated "workspace area" to
+test the model’s performance. Notably, all OOD variants were
+tested in a zero-shot manner, without any additional fine-tuning,
+to assess the model’s ability to generalize to diverse multi-
+instruction tasks and visual robustness.
+Main results.We compare BitVLA against two representative
+VLA baselines: π0 and OpenVLA-OFT. Fig. 4 illustrates the
+success rates on the three base manipulation tasks, while Fig. 5
+presents the performance on the OOD variants. As shown in
+Fig. 4, BitVLA demonstrates comparable performance despite
+its significantly reduced memory. First, BitVLA consistently
+outperforms the 3B-parameter baseline π0 across all tasks,
+achieving a higher average success rate. Second, compared
+to the 7B-parameter OpenVLA-OFT, BitVLA remains highly
+competitive. The results in Fig. 5 demonstrate that BitVLA
+maintains robustness comparable to strong baselines under
+distribution shifts. Across diverse OOD scenarios, ranging
+from interacting with unseen objects (e.g., “Grasp Sponge”)
+to operating under visual distractors (e.g., “Flip Bell with
+Tablecloth”), BitVLA exhibits competitive resilience. Despite
+its significantly reduced memory footprint, the model does
+not suffer from catastrophic performance drops. Instead, it
+effectively generalizes to novel situations, suggesting that
+BitVLA possesses generalization capabilities on par with strong
+baselines. To validate the necessity of our pre-training stage,
+we compare BitVLA with a variant trained from scratch using5 15
+0
+75
+60
+4050
+35 40
+55
+77.5
+55
+Grasp the sponge on the
+table
+Put the watermelon into the
+basket
+Flip the bell upright
+0
+20
+40
+60
+80
+Average
+BitVLA (w/o pre-training)
+BitVLA
+Pi-0
+OpenVLA-OFTDiverse Multi-instruction tasks Visual Robustness
+Fig. 5:Real-world robot experiments on out-of-distribution tasks.We evaluate policy generalization on three tasks with
+diverse instructions or visual robustness: “Grasp the watermelon on the table,” “Put the bread into the basket,” and “Flip the
+bell upright.” All models are evaluated zero-shot.
+73
+321
+86
+297
+90
+Latency (ms)
+BitVLA OpenVLA-OFT+ Pi-0 RDT-1B Diffusion Policy
+341.1
+77.9
+291.6
+84.1
+267.4
+Throughput (Hz)
+Fig. 6:Inference efficiency results. BitVLA achieves 73 ms
+latency and 341.1 Hz throughput, outperforming OpenVLA-
+OFT+ by 4.4 × lower latency and 4.4 × higher throughput, and
+also exceedingπ 0 in both metrics.
+only the limited fine-tuning data. As shown in both Fig. 4 and
+Fig. 5, the model fails to learn meaningful policies without
+pre-training, achieving near-zero success rates across most
+tasks. This sharp contrast highlights the critical importance of
+pre-training for the real-world deployment of VLA models.
+Inference efficiency.As shown in Fig. 6, BitVLA delivers
+the best inference efficiency among the baselines. Following
+OpenVLA-OFT [18], we report throughput and latency on an
+NVIDIA A100 GPU averaged over 100 queries. Each query
+includes three 224×224 images, a 14-D robot state, and a
+task command (“scoop raisins into bowl”). All methods use
+an action chunk size of K=25. Baseline numbers are taken
+from [ 18]. BitVLA achieves 73 ms latency and 341.1 Hz
+throughput, substantially outperforming OpenVLA-OFT+ (321
+ms, 77.9 Hz) and RDT-1B (297 ms, 84.1 Hz), corresponding
+to about 4.4 × lower latency than OpenVLA-OFT+. Compared
+with other baselines, BitVLA remains faster than π0 (86 ms,
+291.6 Hz) and Diffusion Policy (90 ms, 267.4 Hz), indicating
+that native low-bit inference can translate into consistent end-
+to-end speedups.
+V. ANALYSIS
+Ablation Studies.To evaluate whether Quantize-then-distill
+stage preserves core multimodal ability with a 1.58-bit vision
+encoder, we benchmark on complementary VQA datasets
+spanning, including knowledge-intensive reasoning [ 48], broad
+multimodal comprehension [ 19], text-rich visuals understand-
+ing [ 20, 16], and fine-grained perception and reasoning [ 7].
+Together, they stress-test whether the quantized encoder retains
+the multimodal competencies needed for downstream tasks.
+As shown in Table III, across the five benchmarks, the
+1.58-bit encoder incurs only a 1.5% absolute drop in aver-
+age accuracy, while reducing the vision encoder’s memory
+footprint from 0.8 GB to 0.1 GB. These results indicate that
+Quantize-then-distill stage largely preserves general multimodal
+capability under aggressive low-bit quantization, substantially
+lowering inference-time memory consumption and providing a
+strong foundation for efficient VLA deployment. We further
+analyze the impact of key design choices during Quantize-then-
+distill stage. As reported in Table III, adding the representation
+alignment loss yields a large improvement in zero-shot per-
+formance for the 1.58-bit vision encoder, increasing average
+accuracy from 42.4% to 50.8%. In addition, we compare models
+trained with 5B and 10B tokens: scaling the amount of data
+in Quantize-then-distill stage consistently improves overall
+performance, suggesting that additional multimodal supervision
+further mitigates quantization-induced degradation.
+t-SNE Visualization.We additionally visualize the representa-
+tion similarity between the full-precision teacher SigLIP and our
+1.58-bit student via a t-SNE analysis [36] on COCO dateset [23].
+Concretely, we use the COCO 2017 validation split and select
+a subset of images from common object categories. We first
+choose 15 object classes, e.g., bicycle and motorcycle, and
+sample up to 50 images per category using the official COCO
+annotations. Each image is fed into both full-precision teacher
+and 1.58-bit student. We take the [CLS] token from different
+layers of the vision encoder as the global image embedding.
+We then concatenate all teacher and student embeddings andTABLE III:Zero-shot accuracy on multimodal benchmarks. The Quantize-then-distill stage preserves the multimodal ability
+while reducing the memory footprint from 0.8GB to 0.1GB. Then we conduct ablations on data size and representation alignment
+loss of Quantize-then-distill stage. WBits and ABits denote the bit-width of weight and activations, respectively.
+WBits ABits ViT Memory Usage
+(GB)
+Training Tokens
+(Stage III) Laux
+MMMU
+(val)
+SeedBench
+(image)
+SeedBench2+
+(test)
+MMStar
+(test)
+AI2D
+(test) Average
+BF16 BF16 0.8GB (8.00×) - - 37.4 70.6 45.0 43.6 68.6 53.0
+1.58-bit INT8 0.1GB (1.00×) 10B ✓ 35.4 69.3 43.7 41.5 67.6 51.5
+1.58-bit INT8 0.1GB (1.00×) 5B ✓ 33.3 69.1 43.3 41.4 66.4 50.8
+1.58-bit INT8 0.1GB (1.00×) 5B ✗ 32.4 52.9 38.8 30.7 57.5 42.4
+Layer 26
+BF16 SigLIP
+1.58-bit SigLIP
+bicycle
+bird
+book
+bottle
+bus
+car
+cat
+chair
+dining table
+dog
+laptop
+motorcycle
+person
+tv
+Layer 0
+Layer 12
+Layer 26
+Fig. 7: t-SNE visualization of full-precision and 1.58-bit vision encoders on the COCO dataset [ 23]. As the network depth
+increases, the internal representations of the 1.58-bit vision encoder become increasingly aligned with those of the full-precision
+encoder. This result validates the effectiveness of the proposed distillation-aware training strategy.
+project them to 2D using t-SNE. In the resulting plot, each
+image corresponds to a pair of teacher and student connected
+by a line. As shown in Fig. 7, as the network depth increases,
+the student points lie very close to their teacher counterparts
+while preserving the global semantic cluster structure across
+categories, illustrating that the 1.58-bit model closely matches
+the teacher’s embedding geometry.
+VI. DISCUSSION ANDLIMITATIONS
+Beyond memory savings, BitVLA also changes the arith-
+metic profile of the dominant linear projections. Consider a lin-
+ear layer y=W x with W∈R n×n and x∈R n. Full-precision
+inference performs O(n2) floating-point multiply–accumulate
+operations. In BitVLA, the quantized weights Qw(W)∈
+{−1,0,1} n×n and activations Qa(x)∈[−128,127] n allow
+each dot product to be implemented primarily via inte-
+ger additions (with zero weights skipped), while floating-
+point computation is largely limited to per-element scaling.
+Concretely, quantization and de-quantization introduce only
+O(n) scalar multiplications (e.g., 2n for applying α and β),
+shifting the core compute from floating-point MACs to integer
+accumulations. This shift suggests lower arithmetic energy and
+improved suitability for edge deployment, and motivates future
+hardware–algorithm co-design for efficient ternary-by-INT8
+kernels in VLA accelerators.
+Our approach relies on quantization-aware training, which
+can induce parameter and activation distributions that differ
+from full-precision models. Consequently, directly applying
+1-bit post-training quantization to strong full-precision LLM or
+VLM backbones may lead to substantial accuracy degradation,
+consistent with prior observations in 1-bit modeling [ 38]. This
+limits BitVLA as a drop-in conversion recipe for arbitrary
+full-precision backbones. Finally, due to limited resources,
+we pre-train BitVLA with roughly 1M samples. While this
+scale suffices to demonstrate feasibility and efficiency benefits,
+larger-scale robotics pre-training will likely be necessary to
+fully realize strong generalization across a broader range of
+tasks, environments, and robot embodiments.
+VII. CONCLUSION
+We propose BitVLA, the first fully native 1-bit VLA model
+for robotic manipulation, where every parameter is constrained
+to ternary values. Built on the publicly available 1-bit LLM
+BitNet b1.58 2B4T, BitVLA inherits the compactness of 1-bit
+pretraining while retaining strong task competence. To further
+reduce the vision backbone footprint, we introduce Quantize-
+then-Distill, which compresses a full-precision vision encoder
+to 1.58-bit weights under the guidance of a full-precision
+teacher for representation alignment. Across simulation bench-
+marks and real-world tasks, BitVLA matches the performance
+of the full-precision OpenVLA-OFT baseline while achieving
+an 11.0× smaller memory footprint and 4.4× lower end-to-
+end latency. These results highlight BitVLA as a cost-effectiveand efficient solution for robotics applications on memory-
+constrained hardware.
+REFERENCES
+[1] Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin
+Ge, Sibo Song, Kai Dang, Peng Wang, Shijie Wang, Jun
+Tang, Humen Zhong, Yuanzhi Zhu, Ming-Hsuan Yang,
+Zhaohai Li, Jianqiang Wan, Pengfei Wang, Wei Ding,
+Zheren Fu, Yiheng Xu, Jiabo Ye, Xi Zhang, Tianbao Xie,
+Zesen Cheng, Hang Zhang, Zhibo Yang, Haiyang Xu,
+and Junyang Lin. Qwen2.5-vl technical report.CoRR,
+abs/2502.13923, 2025.
+[2] Yoshua Bengio, Nicholas Léonard, and Aaron C.
+Courville. Estimating or propagating gradients through
+stochastic neurons for conditional computation.CoRR,
+abs/1308.3432, 2013.
+[3] Johan Bjorck, Fernando Castañeda, Nikita Cherniadev,
+Xingye Da, Runyu Ding, Linxi Fan, Yu Fang, Dieter
+Fox, Fengyuan Hu, Spencer Huang, Joel Jang, Zhenyu
+Jiang, Jan Kautz, Kaushil Kundalia, Lawrence Lao, Zhiqi
+Li, Zongyu Lin, Kevin Lin, Guilin Liu, Edith LLontop,
+Loic Magne, Ajay Mandlekar, Avnish Narayan, Soroush
+Nasiriany, Scott Reed, You Liang Tan, Guanzhi Wang,
+Zu Wang, Jing Wang, Qi Wang, Jiannan Xiang, Yuqi
+Xie, Yinzhen Xu, Zhenjia Xu, Seonghyeon Ye, Zhiding
+Yu, Ao Zhang, Hao Zhang, Yizhou Zhao, Ruijie Zheng,
+and Yuke Zhu. GR00T N1: an open foundation model
+for generalist humanoid robots.CoRR, abs/2503.14734,
+2025.
+[4] Kevin Black, Noah Brown, Danny Driess, Adnan Esmail,
+Michael Equi, Chelsea Finn, Niccolo Fusai, Lachy Groom,
+Karol Hausman, Brian Ichter, Szymon Jakubczak, Tim
+Jones, Liyiming Ke, Sergey Levine, Adrian Li-Bell,
+Mohith Mothukuri, Suraj Nair, Karl Pertsch, Lucy Xi-
+aoyang Shi, James Tanner, Quan Vuong, Anna Walling,
+Haohuan Wang, and Ury Zhilinsky. π0: A vision-
+language-action flow model for general robot control.
+CoRR, abs/2410.24164, 2024.
+[5] Anthony Brohan, Noah Brown, Justice Carbajal, Yev-
+gen Chebotar, Joseph Dabis, Chelsea Finn, Keerthana
+Gopalakrishnan, Karol Hausman, Alexander Herzog,
+Jasmine Hsu, Julian Ibarz, Brian Ichter, Alex Irpan, Tomas
+Jackson, Sally Jesmonth, Nikhil J. Joshi, Ryan Julian,
+Dmitry Kalashnikov, Yuheng Kuang, Isabel Leal, Kuang-
+Huei Lee, Sergey Levine, Yao Lu, Utsav Malla, Deek-
+sha Manjunath, Igor Mordatch, Ofir Nachum, Carolina
+Parada, Jodilyn Peralta, Emily Perez, Karl Pertsch, Jornell
+Quiambao, Kanishka Rao, Michael S. Ryoo, Grecia
+Salazar, Pannag R. Sanketi, Kevin Sayed, Jaspiar Singh,
+Sumedh Sontakke, Austin Stone, Clayton Tan, Huong T.
+Tran, Vincent Vanhoucke, Steve Vega, Quan Vuong, Fei
+Xia, Ted Xiao, Peng Xu, Sichun Xu, Tianhe Yu, and
+Brianna Zitkovich. RT-1: robotics transformer for real-
+world control at scale. InRobotics: Science and Systems
+XIX, Daegu, Republic of Korea, July 10-14, 2023, 2023.
+[6] Qingwen Bu, Yanting Yang, Jisong Cai, Shenyuan Gao,
+Guanghui Ren, Maoqing Yao, Ping Luo, and Hongyang
+Li. Univla: Learning to act anywhere with task-centric
+latent actions.arXiv preprint arXiv:2505.06111, 2025.
+[7] Lin Chen, Jinsong Li, Xiaoyi Dong, Pan Zhang, Yuhang
+Zang, Zehui Chen, Haodong Duan, Jiaqi Wang, Yu Qiao,
+Dahua Lin, et al. Are we on the right way for eval-
+uating large vision-language models?arXiv preprint
+arXiv:2403.20330, 2024.
+[8] Tri Dao, Daniel Y . Fu, Stefano Ermon, Atri Rudra, and
+Christopher Ré. Flashattention: Fast and memory-efficient
+exact attention with io-awareness. InAdvances in Neural
+Information Processing Systems 35, 2022.
+[9] Tim Dettmers, Mike Lewis, Younes Belkada, and Luke
+Zettlemoyer. Llm.int8(): 8-bit matrix multiplication for
+transformers at scale.arXiv preprint arXiv:2208.07339,
+2022.
+[10] Danny Driess, Fei Xia, Mehdi S. M. Sajjadi, Corey
+Lynch, Aakanksha Chowdhery, Brian Ichter, Ayzaan
+Wahid, Jonathan Tompson, Quan Vuong, Tianhe Yu,
+Wenlong Huang, Yevgen Chebotar, Pierre Sermanet,
+Daniel Duckworth, Sergey Levine, Vincent Vanhoucke,
+Karol Hausman, Marc Toussaint, Klaus Greff, Andy
+Zeng, Igor Mordatch, and Pete Florence. Palm-e: An
+embodied multimodal language model. In Andreas Krause,
+Emma Brunskill, Kyunghyun Cho, Barbara Engelhardt,
+Sivan Sabato, and Jonathan Scarlett, editors,International
+Conference on Machine Learning, ICML 2023, 23-29 July
+2023, Honolulu, Hawaii, USA, volume 202 ofProceedings
+of Machine Learning Research, pages 8469–8488. PMLR,
+2023.
+[11] Jarvis Guo, Tuney Zheng, Yuelin Bai, Bo Li, Yubo Wang,
+King Zhu, Yizhi Li, Graham Neubig, Wenhu Chen, and
+Xiang Yue. Mammoth-vl: Eliciting multimodal reasoning
+with instruction tuning at scale. 2024. URL https://arxiv.
+org/abs/2412.05237.
+[12] Wenyi Hong, Weihan Wang, Qingsong Lv, Jiazheng Xu,
+Wenmeng Yu, Junhui Ji, Yan Wang, Zihan Wang, Yuxiao
+Dong, Ming Ding, and Jie Tang. Cogagent: A visual
+language model for GUI agents. InIEEE/CVF Conference
+on Computer Vision and Pattern Recognition, CVPR 2024,
+Seattle, WA, USA, June 16-22, 2024, pages 14281–14290.
+IEEE, 2024.
+[13] Chia-Yu Hung, Qi Sun, Pengfei Hong, Amir Zadeh,
+Chuan Li, U Tan, Navonil Majumder, Soujanya Poria,
+et al. Nora: A small open-sourced generalist vision
+language action model for embodied tasks.arXiv preprint
+arXiv:2504.19854, 2025.
+[14] Aaron Hurst, Adam Lerer, Adam P. Goucher, Adam
+Perelman, Aditya Ramesh, Aidan Clark, AJ Ostrow, Akila
+Welihinda, Alan Hayes, Alec Radford, Aleksander Madry,
+Alex Baker-Whitcomb, Alex Beutel, Alex Borzunov, Alex
+Carney, Alex Chow, Alex Kirillov, Alex Nichol, Alex
+Paino, Alex Renzin, Alex Tachard Passos, Alexander Kir-
+illov, Alexi Christakis, Alexis Conneau, Ali Kamali, Allan
+Jabri, Allison Moyer, Allison Tam, Amadou Crookes,
+Amin Tootoonchian, Ananya Kumar, Andrea Vallone,Andrej Karpathy, Andrew Braunstein, Andrew Cann,
+Andrew Codispoti, Andrew Galu, Andrew Kondrich,
+Andrew Tulloch, Andrey Mishchenko, Angela Baek,
+Angela Jiang, Antoine Pelisse, Antonia Woodford, Anuj
+Gosalia, Arka Dhar, Ashley Pantuliano, Avi Nayak, Avital
+Oliver, Barret Zoph, Behrooz Ghorbani, Ben Leimberger,
+Ben Rossen, Ben Sokolowsky, Ben Wang, Benjamin
+Zweig, Beth Hoover, Blake Samic, Bob McGrew, Bobby
+Spero, Bogo Giertler, Bowen Cheng, Brad Lightcap,
+Brandon Walkin, Brendan Quinn, Brian Guarraci, Brian
+Hsu, Bright Kellogg, Brydon Eastman, Camillo Lugaresi,
+Carroll L. Wainwright, Cary Bassin, Cary Hudson, Casey
+Chu, Chad Nelson, Chak Li, Chan Jun Shern, Channing
+Conger, Charlotte Barette, Chelsea V oss, Chen Ding,
+Cheng Lu, Chong Zhang, Chris Beaumont, Chris Hallacy,
+Chris Koch, Christian Gibson, Christina Kim, Christine
+Choi, Christine McLeavey, Christopher Hesse, Claudia
+Fischer, Clemens Winter, Coley Czarnecki, Colin Jarvis,
+Colin Wei, Constantin Koumouzelis, and Dane Sherburn.
+Gpt-4o system card.CoRR, abs/2410.21276, 2024.
+[15] Ayush Kaushal, Tejas Vaidhya, Arnab Kumar Mondal,
+Tejas Pandey, Aaryan Bhagat, and Irina Rish. Spectra:
+Surprising effectiveness of pretraining ternary language
+models at scale.arXiv preprint arXiv:2407.12327, 2024.
+[16] Aniruddha Kembhavi, Mike Salvato, Eric Kolve, Minjoon
+Seo, Hannaneh Hajishirzi, and Ali Farhadi. A diagram is
+worth a dozen images. InComputer Vision–ECCV 2016:
+14th European Conference, Amsterdam, The Netherlands,
+October 11–14, 2016, Proceedings, Part IV 14, pages
+235–251. Springer, 2016.
+[17] Moo Jin Kim, Karl Pertsch, Siddharth Karamcheti, Ted
+Xiao, Ashwin Balakrishna, Suraj Nair, Rafael Rafailov,
+Ethan Paul Foster, Pannag R. Sanketi, Quan Vuong,
+Thomas Kollar, Benjamin Burchfiel, Russ Tedrake, Dorsa
+Sadigh, Sergey Levine, Percy Liang, and Chelsea Finn.
+Openvla: An open-source vision-language-action model.
+InConference on Robot Learning, 6-9 November 2024,
+Munich, Germany, volume 270 ofProceedings of Machine
+Learning Research, pages 2679–2713. PMLR, 2024.
+[18] Moo Jin Kim, Chelsea Finn, and Percy Liang. Fine-
+tuning vision-language-action models: Optimizing speed
+and success.CoRR, abs/2502.19645, 2025.
+[19] Bohao Li, Rui Wang, Guangzhi Wang, Yuying Ge,
+Yixiao Ge, and Ying Shan. Seed-bench: Benchmarking
+multimodal llms with generative comprehension.CoRR,
+abs/2307.16125, 2023.
+[20] Bohao Li, Yuying Ge, Yi Chen, Yixiao Ge, Ruimao
+Zhang, and Ying Shan. Seed-bench-2-plus: Benchmarking
+multimodal large language models with text-rich visual
+comprehension.arXiv preprint arXiv:2404.16790, 2024.
+[21] Xinghang Li, Minghuan Liu, Hanbo Zhang, Cunjun Yu,
+Jie Xu, Hongtao Wu, Chilam Cheang, Ya Jing, Weinan
+Zhang, Huaping Liu, Hang Li, and Tao Kong. Vision-
+language foundation models as effective robot imitators.
+InThe Twelfth International Conference on Learning
+Representations, ICLR 2024, Vienna, Austria, May 7-11,
+2024. OpenReview.net, 2024.
+[22] Tao Lin, Yilei Zhong, Yuxin Du, Jingjing Zhang, Jiting
+Liu, Yinxinyu Chen, Encheng Gu, Ziyan Liu, Hongyi
+Cai, Yanwen Zou, Lixing Zou, Zhaoye Zhou, Gen Li,
+and Bo Zhao. Evo-1: Lightweight vision-language-
+action model with preserved semantic alignment.CoRR,
+abs/2511.04555, 2025.
+[23] Tsung-Yi Lin, Michael Maire, Serge J. Belongie, James
+Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, and
+C. Lawrence Zitnick. Microsoft COCO: common objects
+in context. InComputer Vision - ECCV 2014 - 13th
+European Conference, Zurich, Switzerland, September
+6-12, 2014, Proceedings, Part V, volume 8693 ofLecture
+Notes in Computer Science, pages 740–755. Springer,
+2014.
+[24] Bo Liu, Yifeng Zhu, Chongkai Gao, Yihao Feng, Qiang
+Liu, Yuke Zhu, and Peter Stone. LIBERO: benchmarking
+knowledge transfer for lifelong robot learning. In
+Advances in Neural Information Processing Systems 36:
+Annual Conference on Neural Information Processing
+Systems 2023, NeurIPS 2023, New Orleans, LA, USA,
+December 10 - 16, 2023, 2023.
+[25] Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae
+Lee. Visual instruction tuning. InAdvances in Neural
+Information Processing Systems 36, 2023.
+[26] Haotian Liu, Chunyuan Li, Yuheng Li, and Yong Jae Lee.
+Improved baselines with visual instruction tuning. In
+Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition, pages 26296–26306,
+2024.
+[27] Shih-Yang Liu, Zechun Liu, Xijie Huang, Pingcheng
+Dong, and Kwang-Ting Cheng. LLM-FP4: 4-bit floating-
+point quantized transformers. InEMNLP 2023, pages 592–
+605. Association for Computational Linguistics, 2023.
+[28] Shuming Ma, Hongyu Wang, Lingxiao Ma, Lei Wang,
+Wenhui Wang, Shaohan Huang, Li Dong, Ruiping Wang,
+Jilong Xue, and Furu Wei. The era of 1-bit llms: All large
+language models are in 1.58 bits.CoRR, abs/2402.17764,
+2024.
+[29] Shuming Ma, Hongyu Wang, Shaohan Huang, Xingxing
+Zhang, Ying Hu, Ting Song, Yan Xia, and Furu Wei.
+Bitnet b1. 58 2b4t technical report.arXiv preprint
+arXiv:2504.12285, 2025.
+[30] Yao Mu, Qinglong Zhang, Mengkang Hu, Wenhai Wang,
+Mingyu Ding, Jun Jin, Bin Wang, Jifeng Dai, Yu Qiao,
+and Ping Luo. Embodiedgpt: Vision-language pre-training
+via embodied chain of thought. InAdvances in Neural
+Information Processing Systems 36: Annual Conference
+on Neural Information Processing Systems 2023, NeurIPS
+2023, New Orleans, LA, USA, December 10 - 16, 2023,
+2023.
+[31] Abby O’Neill, Abdul Rehman, Abhiram Maddukuri,
+Abhishek Gupta, Abhishek Padalkar, Abraham Lee, Acorn
+Pooley, Agrim Gupta, Ajay Mandlekar, Ajinkya Jain,
+Albert Tung, Alex Bewley, Alexander Herzog, Alex
+Irpan, Alexander Khazatsky, Anant Rai, Anchit Gupta,Andrew E. Wang, Anikait Singh, Animesh Garg, Anirud-
+dha Kembhavi, Annie Xie, Anthony Brohan, Antonin
+Raffin, Archit Sharma, Arefeh Yavary, Arhan Jain, Ash-
+win Balakrishna, Ayzaan Wahid, Ben Burgess-Limerick,
+Beomjoon Kim, Bernhard Schölkopf, Blake Wulfe, Brian
+Ichter, Cewu Lu, Charles Xu, Charlotte Le, Chelsea
+Finn, Chen Wang, Chenfeng Xu, Cheng Chi, Chenguang
+Huang, Christine Chan, Christopher Agia, Chuer Pan,
+Chuyuan Fu, Coline Devin, Danfei Xu, Daniel Morton,
+Danny Driess, Daphne Chen, Deepak Pathak, Dhruv Shah,
+Dieter Büchler, Dinesh Jayaraman, Dmitry Kalashnikov,
+Dorsa Sadigh, Edward Johns, Ethan Paul Foster, Fangchen
+Liu, Federico Ceola, Fei Xia, Feiyu Zhao, Freek Stulp,
+Gaoyue Zhou, Gaurav S. Sukhatme, Gautam Salhotra,
+Ge Yan, Gilbert Feng, Giulio Schiavi, Glen Berseth,
+Gregory Kahn, Guanzhi Wang, Hao Su, Haoshu Fang,
+Haochen Shi, Henghui Bao, Heni Ben Amor, Henrik I.
+Christensen, Hiroki Furuta, Homer Walke, Hongjie Fang,
+Huy Ha, Igor Mordatch, Ilija Radosavovic, Isabel Leal,
+Jacky Liang, Jad Abou-Chakra, Jaehyung Kim, Jaimyn
+Drake, Jan Peters, Jan Schneider, Jasmine Hsu, Jeannette
+Bohg, Jeffrey Bingham, Jeffrey Wu, Jensen Gao, Jiaheng
+Hu, Jiajun Wu, Jialin Wu, Jiankai Sun, Jianlan Luo,
+Jiayuan Gu, Jie Tan, Jihoon Oh, Jimmy Wu, Jingpei Lu,
+Jingyun Yang, Jitendra Malik, João Silvério, Joey Hejna,
+Jonathan Booher, Jonathan Tompson, Jonathan Yang, Jordi
+Salvador, Joseph J. Lim, Junhyek Han, Kaiyuan Wang,
+Kanishka Rao, Karl Pertsch, Karol Hausman, Keegan
+Go, Keerthana Gopalakrishnan, Ken Goldberg, Kendra
+Byrne, Kenneth Oslund, Kento Kawaharazuka, Kevin
+Black, Kevin Lin, Kevin Zhang, Kiana Ehsani, Kiran
+Lekkala, Kirsty Ellis, Krishan Rana, Krishnan Srinivasan,
+Kuan Fang, Kunal Pratap Singh, Kuo-Hao Zeng, Kyle
+Hatch, Kyle Hsu, Laurent Itti, Lawrence Yunliang Chen,
+Lerrel Pinto, Li Fei-Fei, Liam Tan, Linxi Jim Fan, Lionel
+Ott, Lisa Lee, Luca Weihs, Magnum Chen, Marion
+Lepert, Marius Memmel, Masayoshi Tomizuka, Masha
+Itkina, Mateo Guaman Castro, Max Spero, Maximilian
+Du, Michael Ahn, Michael C. Yip, Mingtong Zhang,
+Mingyu Ding, Minho Heo, Mohan Kumar Srirama,
+Mohit Sharma, Moo Jin Kim, Naoaki Kanazawa, Nicklas
+Hansen, Nicolas Heess, Nikhil J. Joshi, Niko Sünderhauf,
+Ning Liu, Norman Di Palo, Nur Muhammad (Mahi)
+Shafiullah, Oier Mees, Oliver Kroemer, Osbert Bastani,
+Pannag R. Sanketi, Patrick Tree Miller, Patrick Yin, Paul
+Wohlhart, Peng Xu, Peter David Fagan, Peter Mitrano,
+Pierre Sermanet, Pieter Abbeel, Priya Sundaresan, Qiuyu
+Chen, Quan Vuong, Rafael Rafailov, Ran Tian, Ria
+Doshi, Roberto Martín-Martín, Rohan Baijal, Rosario
+Scalise, Rose Hendrix, Roy Lin, Runjia Qian, Ruohan
+Zhang, Russell Mendonca, Rutav Shah, Ryan Hoque,
+Ryan Julian, Samuel Bustamante, Sean Kirmani, Sergey
+Levine, Shan Lin, Sherry Moore, Shikhar Bahl, Shivin
+Dass, Shubham D. Sonawani, Shuran Song, Sichun
+Xu, Siddhant Haldar, Siddharth Karamcheti, Simeon
+Adebola, Simon Guist, Soroush Nasiriany, Stefan Schaal,
+Stefan Welker, Stephen Tian, Subramanian Ramamoorthy,
+Sudeep Dasari, Suneel Belkhale, Sungjae Park, Suraj
+Nair, Suvir Mirchandani, Takayuki Osa, Tanmay Gupta,
+Tatsuya Harada, Tatsuya Matsushima, Ted Xiao, Thomas
+Kollar, Tianhe Yu, Tianli Ding, Todor Davchev, Tony Z.
+Zhao, Travis Armstrong, Trevor Darrell, Trinity Chung,
+Vidhi Jain, Vincent Vanhoucke, Wei Zhan, Wenxuan Zhou,
+Wolfram Burgard, Xi Chen, Xiaolong Wang, Xinghao Zhu,
+Xinyang Geng, Xiyuan Liu, Liangwei Xu, Xuanlin Li,
+Yao Lu, Yecheng Jason Ma, Yejin Kim, Yevgen Chebotar,
+Yifan Zhou, Yifeng Zhu, Yilin Wu, Ying Xu, Yixuan
+Wang, Yonatan Bisk, Yoonyoung Cho, Youngwoon Lee,
+Yuchen Cui, Yue Cao, Yueh-Hua Wu, Yujin Tang, Yuke
+Zhu, Yunchu Zhang, Yunfan Jiang, Yunshuang Li, Yunzhu
+Li, Yusuke Iwasawa, Yutaka Matsuo, Zehan Ma, Zhuo
+Xu, Zichen Jeff Cui, Zichen Zhang, and Zipeng Lin.
+Open x-embodiment: Robotic learning datasets and RT-X
+models : Open x-embodiment collaboration. InIEEE
+International Conference on Robotics and Automation,
+ICRA 2024, Yokohama, Japan, May 13-17, 2024, pages
+6892–6903. IEEE.
+[32] Houwen Peng, Kan Wu, Yixuan Wei, Guoshuai Zhao,
+Yuxiang Yang, Ze Liu, Yifan Xiong, Ziyue Yang, Bolin
+Ni, Jingcheng Hu, Ruihang Li, Miaosen Zhang, Chen Li,
+Jia Ning, Ruizhe Wang, Zheng Zhang, Shuguang Liu, Joe
+Chau, Han Hu, and Peng Cheng. FP8-LM: training FP8
+large language models.CoRR, abs/2310.18313, 2023.
+[33] Yujia Qin, Yining Ye, Junjie Fang, Haoming Wang, Shihao
+Liang, Shizuo Tian, Junda Zhang, Jiahao Li, Yunxin Li,
+Shijue Huang, Wanjun Zhong, Kuanye Li, Jiale Yang,
+Yu Miao, Woyu Lin, Longxiang Liu, Xu Jiang, Qianli Ma,
+Jingyu Li, Xiaojun Xiao, Kai Cai, Chuang Li, Yaowei
+Zheng, Chaolin Jin, Chen Li, Xiao Zhou, Minchao Wang,
+Haoli Chen, Zhaojian Li, Haihua Yang, Haifeng Liu,
+Feng Lin, Tao Peng, Xin Liu, and Guang Shi. UI-TARS:
+pioneering automated GUI interaction with native agents.
+CoRR, abs/2501.12326, 2025.
+[34] Delin Qu, Haoming Song, Qizhi Chen, Yuanqi Yao, Xinyi
+Ye, Yan Ding, Zhigang Wang, JiaYuan Gu, Bin Zhao,
+Dong Wang, and Xuelong Li. Spatialvla: Exploring spatial
+representations for visual-language-action model.CoRR,
+abs/2501.15830, 2025.
+[35] Mustafa Shukor, Dana Aubakirova, Francesco Capuano,
+Pepijn Kooijmans, Steven Palma, Adil Zouitine, Michel
+Aractingi, Caroline Pascal, Martino Russi, Andrés Marafi-
+oti, Simon Alibert, Matthieu Cord, Thomas Wolf, and
+Rémi Cadène. Smolvla: A vision-language-action
+model for affordable and efficient robotics.CoRR,
+abs/2506.01844, 2025. URL https://doi.org/10.48550/
+arXiv.2506.01844.
+[36] Laurens van der Maaten and Geoffrey Hinton. Visualizing
+data using t-sne.Journal of Machine Learning Research,
+9(86):2579–2605, 2008.
+[37] Haozhe Wang, Chao Qu, Zuming Huang, Wei Chu,
+Fangzhen Lin, and Wenhu Chen. Vl-rethinker: Incen-
+tivizing self-reflection of vision-language models withreinforcement learning.arXiv preprint arXiv:2504.08837,
+2025.
+[38] Hongyu Wang, Shuming Ma, Li Dong, Shaohan Huang,
+Huaijie Wang, Lingxiao Ma, Fan Yang, Ruiping Wang,
+Yi Wu, and Furu Wei. Bitnet: Scaling 1-bit transformers
+for large language models.CoRR, abs/2310.11453, 2023.
+[39] Hongyu Wang, Shuming Ma, and Furu Wei. Bitnet a4.8:
+4-bit activations for 1-bit llms.CoRR, abs/2411.04965,
+2024. URL https://doi.org/10.48550/arXiv.2411.04965.
+[40] Hongyu Wang, Shuming Ma, and Furu Wei. Bitnet v2:
+Native 4-bit activations with hadamard transformation for
+1-bit llms.arXiv preprint arXiv:2504.18415, 2025.
+[41] Lei Wang, Lingxiao Ma, Shijie Cao, Quanlu Zhang, Jilong
+Xue, Yining Shi, Ningxin Zheng, Ziming Miao, Fan
+Yang, Ting Cao, Yuqing Yang, and Mao Yang. Ladder:
+Enabling efficient low-precision deep learning computing
+through hardware-aware tensor transformation. In18th
+USENIX Symposium on Operating Systems Design and
+Implementation (OSDI 24), pages 307–323, Santa Clara,
+CA, 2024. ISBN 978-1-939133-40-3.
+[42] Peng Wang, Shuai Bai, Sinan Tan, Shijie Wang, Zhihao
+Fan, Jinze Bai, Keqin Chen, Xuejing Liu, Jialin Wang,
+Wenbin Ge, Yang Fan, Kai Dang, Mengfei Du, Xuancheng
+Ren, Rui Men, Dayiheng Liu, Chang Zhou, Jingren Zhou,
+and Junyang Lin. Qwen2-vl: Enhancing vision-language
+model’s perception of the world at any resolution.CoRR,
+abs/2409.12191, 2024.
+[43] Yihao Wang, Pengxiang Ding, Lingxiao Li, Can Cui, Zirui
+Ge, Xinyang Tong, Wenxuan Song, Han Zhao, Wei Zhao,
+Pengxu Hou, Siteng Huang, Yifan Tang, Wenhui Wang,
+Ru Zhang, Jianyi Liu, and Donglin Wang. Vla-adapter: An
+effective paradigm for tiny-scale vision-language-action
+model.CoRR, abs/2509.09372, 2025.
+[44] Yuqi Wang, Xinghang Li, Wenxuan Wang, Junbo Zhang,
+Yingyan Li, Yuntao Chen, Xinlong Wang, and Zhaoxiang
+Zhang. Unified vision-language-action model.arXiv
+preprint arXiv:2506.19850, 2025.
+[45] Junjie Wen, Yichen Zhu, Jinming Li, Minjie Zhu, Kun Wu,
+Zhiyuan Xu, Ning Liu, Ran Cheng, Chaomin Shen, Yaxin
+Peng, Feifei Feng, and Jian Tang. Tinyvla: Towards fast,
+data-efficient vision-language-action models for robotic
+manipulation.CoRR, abs/2409.12514, 2024.
+[46] Haocheng Xi, Changhao Li, Jianfei Chen, and Jun Zhu.
+Training transformers with 4-bit integers. InAdvances in
+Neural Information Processing Systems 36, 2023.
+[47] Yuzhuang Xu, Xu Han, Zonghan Yang, Shuo Wang,
+Qingfu Zhu, Zhiyuan Liu, Weidong Liu, and Wanxiang
+Che. Onebit: Towards extremely low-bit large language
+models. InAdvances in Neural Information Processing
+Systems 38, 2024.
+[48] Xiang Yue, Yuansheng Ni, Kai Zhang, Tianyu Zheng,
+Ruoqi Liu, Ge Zhang, Samuel Stevens, Dongfu Jiang,
+Weiming Ren, Yuxuan Sun, et al. Mmmu: A massive
+multi-discipline multimodal understanding and reason-
+ing benchmark for expert agi. InProceedings of the
+IEEE/CVF Conference on Computer Vision and Pattern
+Recognition, pages 9556–9567, 2024.
+[49] Xiaohua Zhai, Basil Mustafa, Alexander Kolesnikov, and
+Lucas Beyer. Sigmoid loss for language image pre-
+training. InIEEE/CVF International Conference on
+Computer Vision, ICCV 2023, Paris, France, October
+1-6, 2023, pages 11941–11952. IEEE, 2023.
+[50] Jiahui Zhang, Yurui Chen, Yueming Xu, Ze Huang,
+Yanpeng Zhou, Yu-Jie Yuan, Xinyue Cai, Guowei Huang,
+Xingyue Quan, Hang Xu, and Li Zhang. 4d-vla: Spa-
+tiotemporal vision-language-action pretraining with cross-
+scene calibration.CoRR, abs/2506.22242, 2025.
+[51] Jingyi Zhang, Jiaxing Huang, Huanjin Yao, Shunyu Liu,
+Xikun Zhang, Shijian Lu, and Dacheng Tao. R1-VL:
+learning to reason with multimodal large language models
+via step-wise group relative policy optimization.CoRR,
+abs/2503.12937, 2025.
+[52] Yichi Zhang, Zhiru Zhang, and Lukasz Lew. Pokebnn:
+A binary pursuit of lightweight accuracy. InCVPR 2022,
+pages 12465–12475. IEEE, 2022.
+[53] Qingqing Zhao, Yao Lu, Moo Jin Kim, Zipeng Fu,
+Zhuoyang Zhang, Yecheng Wu, Zhaoshuo Li, Qianli Ma,
+Song Han, Chelsea Finn, Ankur Handa, Ming-Yu Liu,
+Donglai Xiang, Gordon Wetzstein, and Tsung-Yi Lin.
+Cot-vla: Visual chain-of-thought reasoning for vision-
+language-action models.CoRR, abs/2503.22020, 2025.
+[54] Jinguo Zhu, Weiyun Wang, Zhe Chen, Zhaoyang Liu,
+Shenglong Ye, Lixin Gu, Yuchen Duan, Hao Tian, Weijie
+Su, Jie Shao, et al. Internvl3: Exploring advanced training
+and test-time recipes for open-source multimodal models.
+arXiv preprint arXiv:2504.10479, 2025.
+[55] Rui-Jie Zhu, Yu Zhang, Ethan Sifferman, Tyler Sheaves,
+Yiqiao Wang, Dustin Richmond, Peng Zhou, and Jason K.
+Eshraghian. Scalable matmul-free language modeling.
+CoRR, abs/2406.02528, 2024. URL https://doi.org/10.
+48550/arXiv.2406.02528.
+[56] Brianna Zitkovich, Tianhe Yu, Sichun Xu, Peng Xu,
+Ted Xiao, Fei Xia, Jialin Wu, Paul Wohlhart, Stefan
+Welker, Ayzaan Wahid, Quan Vuong, Vincent Vanhoucke,
+Huong T. Tran, Radu Soricut, Anikait Singh, Jaspiar
+Singh, Pierre Sermanet, Pannag R. Sanketi, Grecia Salazar,
+Michael S. Ryoo, Krista Reymann, Kanishka Rao, Karl
+Pertsch, Igor Mordatch, Henryk Michalewski, Yao Lu,
+Sergey Levine, Lisa Lee, Tsang-Wei Edward Lee, Is-
+abel Leal, Yuheng Kuang, Dmitry Kalashnikov, Ryan
+Julian, Nikhil J. Joshi, Alex Irpan, Brian Ichter, Jasmine
+Hsu, Alexander Herzog, Karol Hausman, Keerthana
+Gopalakrishnan, Chuyuan Fu, Pete Florence, Chelsea
+Finn, Kumar Avinava Dubey, Danny Driess, Tianli Ding,
+Krzysztof Marcin Choromanski, Xi Chen, Yevgen Cheb-
+otar, Justice Carbajal, Noah Brown, Anthony Brohan,
+Montserrat Gonzalez Arenas, and Kehang Han. RT-2:
+vision-language-action models transfer web knowledge to
+robotic control. InConference on Robot Learning, CoRL
+2023, 6-9 November 2023, Atlanta, GA, USA, volume
+229 ofProceedings of Machine Learning Research, pages
+2165–2183. PMLR, 2023.APPENDIX
+DETAILS OFREAL-WORLDEXPERIMENTS
+In this section, we provide comprehensive specifications
+for the manipulation tasks introduced in the main text. As
+mentioned, our evaluation suite consists of three core tasks
+trained on expert demonstrations, along with three Out-of-
+Distribution (OOD) variants evaluated in a zero-shot manner.
+Detailed descriptions and settings for each task are provided
+below.
+1) Grasp Watermelon: The robot must grasp a toy water-
+melon and lift it to a target height. Success is defined as
+securely holding and lifting the object. For this task, the
+models are trained for 30k steps and evaluated with an
+inference horizon of 500 steps to facilitate error recovery.
+2) Flip Bell Upright: The robot is required to reorient a
+lying down bell to an upright position. We award a partial
+success score of 0.5 for a successful grasp and a full
+score of 1.0 for a complete flip. Here, the models are
+trained for 50k steps and evaluated with an inference
+budget of600steps.
+3) Put Bread into Basket: A pick-and-place task involving
+a toy bread and a basket. Grasping the bread yields 0.5
+points, while successful placement yields 1.0. For this
+configuration, the models are trained for 50k steps and
+evaluated with an inference horizon of500steps.
+4) Grasp Sponge (OOD): This task tests cross-object
+generalization by replacing the watermelon with an
+unseen sponge. The models are evaluated with an
+inference horizon of 500 steps, under success criteria
+identical to those in Task 1.
+5) Flip Bell with Tablecloth (OOD): To assess visual
+robustness, a tablecloth is introduced as a background dis-
+tractor. The models are trained for 50k steps (consistent
+with Task 2) and evaluated with an extended inference
+horizon of 1,000 steps to accommodate increased visual
+complexity.
+6) Put Watermelon into Basket (OOD): This variant
+substitutes the bread in Task 3 with a watermelon to
+test cross-object generalization. The models are trained
+for 50k steps and evaluated with an inference budget of
+500 steps, following the same scoring logic as the base
+task.
+HYPER-PARAMETERS
+We present the hyperparameter configurations used for
+training BitVLA in Table IV. Following the recommendations
+of [28], we employ a two-stage weight decay schedule during
+visual instruction tuning. For fine-tuning on the LIBERO-
+Spatial, LIBERO-Object, and LIBERO-Goal suites, we report
+the best results selected from learning rates in the set {5e-5,
+1e-4, 3e-4}. For LIBERO-Long, all models are trained with a
+peak learning rate of 8e-5 for the vision encoder and 4e-4 for
+the LLM.
+TABLE IV: Hyper-parameters for the training of BitVLA.
+Hyper-parameter Stage I Stage II Stage III
+Peak Learning rate 1e-3 3e-4 1e-4
+Batch Size 256 256 256
+Weight decay ✗0.1→0 0.01
+Trainable modules Connector LLM, Connector ViT
+Training steps 25k 40k 20k
+Training sequence 1024 2048 2048
+Vision sequence 256
+Learning rate scheduling polynomial decay
+AdamWβ (0.9, 0.999)
+AdamWϵ 1e-8
+Gradient Clipping 1.0
+Dropout ✗
+Attention Dropout ✗
+TABLE V: Hyper-parameters for the fine-tuning of BitVLA
+on LIBERO dataset.
+Hyper-parameter Spatial Object Goal Long
+Peak Learning rate {5e-5, 1e-4, 3e-4} 4e-4,8e-5
+Training steps 10k 10k 10k 100k
+Learning rate scheduling cosine decay
+Warmup steps 375
+Batch Size 64
+Weight decay 0.01
+Trainable modules LLM, Connector, ViT
+AdamWβ (0.9, 0.999)
+AdamWϵ 1e-8
+Gradient Clipping ✗
+TASKS INLIBERO
+We adopt the LIBERO simulation environment [ 24] to
+evaluate the generalization and performance of robotics
+manipulation models. LIBERO benchmark assesses robotic
+intelligence across four critical dimensions: spatial generaliza-
+tion (manipulating objects arranged in novel configurations),
+object generalization (adapting to previously unseen object
+categories), goal generalization (interpreting diverse language
+instructions), and long-horizon reasoning (performing multi-
+stage tasks involving varied objects, layouts, and objectives).
+These capabilities are systematically evaluated through four
+corresponding task suites, namely LIBERO-Spatial, LIBERO-
+Object, LIBERO-Goal, and LIBERO-Long. Each task suite
+contains 500 expert demonstrations systematically distributed
+across 10 distinct manipulation tasks.
+We present the detailed task compositions of each task
+suite in LIBERO. As shown in Table VI, it demonstrates the
+distinct task configurations across the four task suites within the
+LIBERO framework. Fig. 8 illustrates the scene visualizations
+for a subset of tasks.TABLE VI: Task description in LIBERO benchmark task suites.
+Task suite Task description
+Spatial
+pick up the black bowl between the plate and the ramekin and place it on the plate
+pick up the black bowl next to the ramekin and place it on the plate
+pick up the black bowl from table center and place it on the plate
+pick up the black bowl on the cookie box and place it on the plate
+pick up the black bowl in the top drawer of the wooden cabinet and place it on the plate
+pick up the black bowl on the ramekin and place it on the plate
+pick up the black bowl next to the cookie box and place it on the plate
+pick up the black bowl on the stove and place it on the plate
+pick up the black bowl next to the plate and place it on the plate
+pick up the black bowl on the wooden cabinet and place it on the plate
+Object
+pick up the alphabet soup and place it in the basket
+pick up the cream cheese and place it in the basket
+pick up the salad dressing and place it in the basket
+pick up the bbq sauce and place it in the basket
+pick up the ketchup and place it in the basket
+pick up the tomato sauce and place it in the basket
+pick up the butter and place it in the basket
+pick up the milk and place it in the basket
+pick up the chocolate pudding and place it in the basket
+pick up the orange juice and place it in the basket
+Goal
+open the middle drawer of the cabinet
+put the bowl on the stove
+put the wine bottle on top of the cabinet
+open the top drawer and put the bowl inside
+put the bowl on top of the cabinet
+push the plate to the front of the stove
+put the cream cheese in the bowl
+turn on the stove
+put the bowl on the plate
+put the wine bottle on the rack
+Long
+put both the alphabet soup and the tomato sauce in the basket
+put both the cream cheese box and the butter in the basket
+turn on the stove and put the moka pot on it
+put the black bowl in the bottom drawer of the cabinet and close it
+put the white mug on the left plate and put the yellow and white mug on the right plate
+pick up the book and place it in the back compartment of the caddy
+put the white mug on the plate and put the chocolate pudding to the right of the plate
+put both the alphabet soup and the cream cheese box in the basket
+put both moka pots on the stove
+put the yellow and white mug in the microwave and close itFig. 8: Examples in LIBERO benchmark tasks suites.
