@@ -1,24 +1,24 @@
 {
   "main": {
-    "id": "6fedb113ceeedf25",
+    "id": "38cfc28736cba4e1",
     "type": "split",
     "children": [
       {
-        "id": "711ac8505e40a281",
+        "id": "ea2dadb89911ab51",
         "type": "tabs",
         "children": [
           {
-            "id": "7a8cb61476a91ce3",
+            "id": "735f0e5608bf9448",
             "type": "leaf",
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Paper 5 KAN We Flow.md",
+                "file": "Paper - COT Policy (Fast Flow).md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Paper 5 KAN We Flow"
+              "title": "Paper - COT Policy (Fast Flow)"
             }
           }
         ]
@@ -27,15 +27,15 @@
     "direction": "vertical"
   },
   "left": {
-    "id": "aa8034497ece5aa5",
+    "id": "4b0e32a282084a87",
     "type": "split",
     "children": [
       {
-        "id": "0541f8f4b475f60f",
+        "id": "949f8c56af744d23",
         "type": "tabs",
         "children": [
           {
-            "id": "9ee1f256a081bbf3",
+            "id": "7b64f226e8386448",
             "type": "leaf",
             "state": {
               "type": "file-explorer",
@@ -48,7 +48,7 @@
             }
           },
           {
-            "id": "5959b4fa339ab323",
+            "id": "e922420ea77bf0f8",
             "type": "leaf",
             "state": {
               "type": "search",
@@ -65,7 +65,7 @@
             }
           },
           {
-            "id": "6c6060d30c0a01df",
+            "id": "551d83e0bd9f6632",
             "type": "leaf",
             "state": {
               "type": "bookmarks",
@@ -78,23 +78,23 @@
       }
     ],
     "direction": "horizontal",
-    "width": 284.5
+    "width": 300
   },
   "right": {
-    "id": "5814b89b541006ae",
+    "id": "edd16b11ffb65a5c",
     "type": "split",
     "children": [
       {
-        "id": "5cbc106ebbe2da95",
+        "id": "d2c740b3f584cc29",
         "type": "tabs",
         "children": [
           {
-            "id": "18959a7ecc1c4c63",
+            "id": "0bb36f6fed841cd3",
             "type": "leaf",
             "state": {
               "type": "backlink",
               "state": {
-                "file": "Paper 5 KAN We Flow.md",
+                "file": "Paper - COT Policy (Fast Flow).md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,25 +104,25 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for Paper 5 KAN We Flow"
+              "title": "Backlinks for Paper - COT Policy (Fast Flow)"
             }
           },
           {
-            "id": "67aaea256a3afdad",
+            "id": "a23bbd6f30cb5e23",
             "type": "leaf",
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "Paper 5 KAN We Flow.md",
+                "file": "Paper - COT Policy (Fast Flow).md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from Paper 5 KAN We Flow"
+              "title": "Outgoing links from Paper - COT Policy (Fast Flow)"
             }
           },
           {
-            "id": "e7743e8d11a8cade",
+            "id": "963b3f5377641de5",
             "type": "leaf",
             "state": {
               "type": "tag",
@@ -137,7 +137,7 @@
             }
           },
           {
-            "id": "ed45879e65d825d3",
+            "id": "aec2d19657ec3692",
             "type": "leaf",
             "state": {
               "type": "all-properties",
@@ -151,18 +151,18 @@
             }
           },
           {
-            "id": "212a65bcbc09f12e",
+            "id": "20c24fe6a4158066",
             "type": "leaf",
             "state": {
               "type": "outline",
               "state": {
-                "file": "Paper 5 KAN We Flow.md",
+                "file": "Paper - COT Policy (Fast Flow).md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of Paper 5 KAN We Flow"
+              "title": "Outline of Paper - COT Policy (Fast Flow)"
             }
           }
         ]
@@ -183,16 +183,9 @@
       "bases:Create new base": false
     }
   },
-  "active": "9ee1f256a081bbf3",
+  "active": "735f0e5608bf9448",
   "lastOpenFiles": [
-    "Paper 4 HAMLET VLA.md",
-    "Paper 5 Kan we flow.md",
     "Paper 5 KAN We Flow.md",
-    "Paper 3 BIT VLA.md",
-    "Paper 4 HAMLET VLA.md.tmp.61272.2ca41d63f9e8",
-    "Paper 4 HAMLET VLA.md.tmp.61272.1e62662b7361",
-    "Paper 2 What Matters in Building VLA.md",
-    "Paper 1 VLA Survey.md",
-    "Welcome.md"
+    "Paper - COT Policy (Fast Flow).md"
   ]
 }

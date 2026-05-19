@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:docs.jax.dev)",
+      "WebFetch(domain:flax.readthedocs.io)",
+      "WebFetch(domain:flax-linen.readthedocs.io)",
+      "Bash(python -c \"import torch; print\\(torch.__version__\\)\")",
+      "Bash(pip install *)",
+      "Bash(python -c \"import jax; import flax; import optax; print\\('all good', jax.__version__\\)\")",
+      "Bash(python -c \"import sys; print\\(sys.executable\\)\")",
+      "Bash(python -c \"import jax; print\\(jax.__version__\\)\")",
+      "Bash(C:\\\\Program Files\\\\Python312\\\\python.exe -c \"import jax; print\\(jax.__version__\\)\")",
+      "PowerShell(& \"C:\\\\Program Files\\\\Python312\\\\python.exe\" -c \"import jax; print\\(jax.__version__\\)\")",
+      "PowerShell(python --version)",
+      "PowerShell(python -c \"import sys; print\\(sys.executable\\)\")",
+      "PowerShell(pip install jax flax optax)",
+      "WebSearch"
+    ]
+  }
+}

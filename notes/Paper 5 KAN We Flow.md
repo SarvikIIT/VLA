@@ -3,11 +3,11 @@ ___
 
 Robot action policies need to be accurate, fast, and lightweight. Current approaches fail on at least one:
 
-| Approach | Accurate | Fast | Lightweight |
-|---|---|---|---|
-| Diffusion (DP3) | ✓ | ✗ many denoising steps | ✗ 255M params, heavy UNet |
-| Flow Matching (FlowPolicy) | ✓ | ✓ one step | ✗ still inherits heavy UNet |
-| **KAN-We-Flow** | ✓ | ✓ | ✓ |
+| Approach                   | Accurate | Fast                   | Lightweight                 |
+| -------------------------- | -------- | ---------------------- | --------------------------- |
+| Diffusion (DP3)            | ✓        | ✗ many denoising steps | ✗ 255M params, heavy UNet   |
+| Flow Matching (FlowPolicy) | ✓        | ✓ one step             | ✗ still inherits heavy UNet |
+| **KAN-We-Flow**            | ✓        | ✓                      | ✓                           |
 
 The heavy **UNet backbone** is the bottleneck in both. DP3 has 255M parameters. Even fast flow-matching methods still inherit UNet-style stacks.
 
@@ -50,7 +50,7 @@ $$\tilde{v}_t^{\rightarrow} = \frac{\displaystyle\sum_{i=1}^{t-1} \exp(-(t-1-i)w
 
 - $w \in \mathbb{R}^C$ = per-channel decay rate (learned) — controls how fast past tokens fade
 - $k_i, v_i$ = key and value projections of token $i$
-- $u$ = learned "current token" bias
+- $u$ = learned "current token" bias specifically uniquely determined for each timestamp.
 
 They run this **bidirectionally** (forward + backward scan, then sum):
 
@@ -82,7 +82,7 @@ $$\text{KAN}(\mathbf{Z}) = (\Phi_{K-1} \circ \Phi_{K-2} \circ \cdots \circ \Phi_
 
 Each $\Phi_k$ is a matrix of learned univariate spline functions $\{\phi^{(k)}_{q,p}\}$ — one per edge between nodes. The network learns the **shape of the function itself**, not just scaling weights. This approximates complex nonlinearities with far fewer parameters.
 
-**GroupKAN** — split input channels into $G=4$ groups, apply an independent KAN to each group, then concatenate:
+**GroupKAN** — split input channels into $G=4$ groups, apply an independent KAN to each group, then concatenate: 4 is sweet spot of speed and quality.
 
 $$\mathbf{Y}_g = \text{KAN}_g(\mathbf{X}_g) \in \mathbb{R}^{B \times T \times C/G}, \quad g = 1,\ldots,G$$
 
