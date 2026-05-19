@@ -15,6 +15,11 @@ from scipy.optimize import linear_sum_assignment
 from octo.model.components.base import TokenGroup
 from octo.model.components.diffusion import cosine_beta_schedule, create_diffusion_model
 from octo.model.components.flow import create_flow_model
+from octo.model.components.fpo import (
+    cfm_loss_from_pred,
+    fpo_ratio_from_diff,
+    ppo_clip_loss,
+)
 from octo.model.components.pca import fit_pca, transform_pca
 from octo.model.components.kmeans import fit_kmeans, assign_clusters
 from octo.model.components.sinkhorn import sinkhorn_match_noise, conditioned_sinkhorn_match
@@ -1135,41 +1140,24 @@ class FPOActionHead(nn.Module):
     ) -> jax.Array:
         """Per-sample flow-matching loss for one (time, noise) draw.
 
+        Network call lives here (needs `transformer_outputs`); the loss
+        math is in `octo.model.components.fpo.cfm_loss_from_pred`.
+
         act_batch: (B, A)  taus: (B,)  epses: (B, A)  ->  returns (B,)
-        Call via `module.apply(vars, ..., method=FPOActionHead.cfm_loss_per_sample)`.
         """
-        time_bc = taus[:, None]                                  # (B, 1)
-        noisy = (1 - time_bc) * epses + time_bc * act_batch       # (B, A)
-        v_target = act_batch - epses                              # (B, A)
+        time_bc = taus[:, None]                                   # (B, 1)
+        noisy = (1 - time_bc) * epses + time_bc * act_batch        # (B, A)
+        v_target = act_batch - epses                               # (B, A)
         v_pred = self(
             transformer_outputs,
             train=False,
-            time=taus[:, None, None],                             # (B, 1, 1)
-            noisy_actions=noisy[:, None, :],                      # (B, 1, A)
-        )                                                         # (B, 1, A)
-        return jnp.sum((v_pred[:, 0, :] - v_target) ** 2, axis=-1)  # (B,)
+            time=taus[:, None, None],                              # (B, 1, 1)
+            noisy_actions=noisy[:, None, :],                       # (B, 1, A)
+        )                                                          # (B, 1, A)
+        return cfm_loss_from_pred(v_pred[:, 0, :], v_target)
 
-    @staticmethod
-    def fpo_ratio_from_diff(avg_loss_diff: ArrayLike) -> jax.Array:
-        """r̂ = exp(L_old - L_new), clamped for numerical stability.
-
-        `avg_loss_diff` is (L_old - L_new) already averaged over MC draws.
-        """
-        return jnp.exp(jnp.clip(avg_loss_diff, -5.0, 5.0))
-
-    @staticmethod
-    def ppo_clip_loss(
-        ratio: ArrayLike, advantages: ArrayLike, clip_eps: float
-    ) -> Tuple[Array, Dict[str, Array]]:
-        """PPO-clip surrogate using the FPO ratio."""
-        clipped = jnp.clip(ratio, 1.0 - clip_eps, 1.0 + clip_eps)
-        loss = -jnp.minimum(ratio * advantages, clipped * advantages).mean()
-        metrics = {
-            "fpo_loss": loss,
-            "ratio_mean": ratio.mean(),
-            "ratio_std": ratio.std(),
-        }
-        return loss, metrics
+    fpo_ratio_from_diff = staticmethod(fpo_ratio_from_diff)
+    ppo_clip_loss = staticmethod(ppo_clip_loss)
 
 
 class SinkhornFlowMatchActionHead(nn.Module):
