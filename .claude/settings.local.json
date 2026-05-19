@@ -14,7 +14,20 @@
       "PowerShell(python --version)",
       "PowerShell(python -c \"import sys; print\\(sys.executable\\)\")",
       "PowerShell(pip install jax flax optax)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(python -c \"import metaworld; print\\('metaworld OK'\\)\")",
+      "Bash(wsl -e bash -c \"python3 -c 'import metaworld; print\\(metaworld.__version__\\)' 2>&1 | head -3\")",
+      "Bash(wsl python3 *)",
+      "PowerShell(wsl --list --verbose 2>&1)",
+      "Bash(python -c \"import jax; print\\(jax.devices\\(\\)\\)\")",
+      "Bash(where python *)",
+      "Bash(\"C:\\\\Program Files\\\\Python312\\\\python.exe\" -c \"import jax; print\\('JAX:', jax.__version__\\); print\\('Devices:', jax.devices\\(\\)\\)\")",
+      "Bash(\"C:/Program Files/Python312/python.exe\" -m py_compile tests/fpo_finetune.py)",
+      "Bash(\"C:/Program Files/Python312/python.exe\" -m py_compile octo/model/components/action_heads.py tests/fpo_finetune.py)",
+      "Bash(\"C:/Program Files/Python312/python.exe\" -m pip install -q distrax)",
+      "Bash(JAX_PLATFORMS=cpu 'C:/Program Files/Python312/python.exe' -c ' *)",
+      "Bash(\"C:/Program Files/Python312/python.exe\" -m pip install -q einops flax)",
+      "PowerShell(Rename-Item \"fpo\\\\tests\\\\fpo_finetune.py\" \"fpo.py\")"
     ]
   }
 }
