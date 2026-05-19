@@ -45,10 +45,7 @@ import metaworld
 from octo.model.components.action_heads import (
     SimpleFlowMatchActionHead,
     DiffusionActionHead,
-    FlowMatchActionHead,
     FPOActionHead,
-    SinkhornFlowMatchActionHead,
-    ConditionedOTFlowMatchActionHead,
 )
 from octo.model.components.base import TokenGroup
 
@@ -183,19 +180,6 @@ def make_head(hidden_dim, num_blocks, head_type="flow"):
         return FPOActionHead(**shared, flow_steps=10, n_flow_samples=1)
     elif head_type == "diffusion":
         return DiffusionActionHead(**shared, diffusion_steps=20, n_diffusion_samples=1)
-    elif head_type == "cot":
-        return FlowMatchActionHead(**shared, flow_steps=10, n_flow_samples=1)
-    elif head_type == "sinkhorn":
-        return SinkhornFlowMatchActionHead(
-            **shared, flow_steps=10, n_flow_samples=2,
-            sinkhorn_reg=0.05, sinkhorn_iters=20,
-        )
-    elif head_type == "conditioned_ot":
-        return ConditionedOTFlowMatchActionHead(
-            **shared, flow_steps=10, n_flow_samples=2,
-            sinkhorn_reg=0.05, sinkhorn_iters=20,
-            obs_weight=0.3, history_weight=0.5, use_history=True,
-        )
     raise ValueError(head_type)
 
 
@@ -243,8 +227,8 @@ def train_and_eval_bc(task_name, obs_data, act_data, hidden_dim, num_blocks,
     """Train any head with BC only (no FPO), evaluate, and return head+params+sr."""
     head = make_head(hidden_dim, num_blocks, head_type)
     params = bc_pretrain(head, obs_data, act_data, train_steps, lr, batch_size)
-    sr = evaluate(head, params, task_name, eval_episodes, max_steps)
-    return head, params, sr
+    sr, eps = evaluate(head, params, task_name, eval_episodes, max_steps)
+    return head, params, sr, eps
 
 
 def obs_to_t_out(obs_batch):
@@ -579,10 +563,12 @@ def evaluate(head, params, task_name, n_episodes, max_steps):
         return action[0, 0, :]
 
     successes = 0
+    ep_results = []
     for ep in range(n_episodes):
         task = mt1.train_tasks[ep % len(mt1.train_tasks)]
         env.set_task(task)
         obs, _ = env.reset()
+        ep_success = False
 
         for step in range(max_steps):
             rng, act_rng = jax.random.split(rng)
@@ -592,11 +578,15 @@ def evaluate(head, params, task_name, n_episodes, max_steps):
             action_np = np.clip(action_np, -1.0, 1.0)
             obs, rew, term, trunc, info = env.step(action_np)
             if info.get("success", 0):
+                ep_success = True
                 successes += 1
                 break
 
+        ep_results.append(ep_success)
+        print(f"        ep {ep+1}/{n_episodes}: {'✓' if ep_success else '✗'}  running SR: {successes/(ep+1):.0%}")
+
     env.close()
-    return successes / n_episodes
+    return successes / n_episodes, ep_results
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -698,14 +688,14 @@ if __name__ == "__main__":
             label = method_labels[ht]
             print(f"\n  [{bc_head_types.index(ht)+2}] Training {label} ...")
             t0 = _time.time()
-            head, params, sr = train_and_eval_bc(
+            head, params, sr, eps = train_and_eval_bc(
                 task_name, obs_data, act_data,
                 args.hidden, args.blocks, args.bc_steps, args.bc_lr,
                 args.eval_episodes, args.max_steps, head_type=ht,
             )
             elapsed = _time.time() - t0
             print(f"      {label} Success Rate: {sr:.0%}  (train+eval: {elapsed:.1f}s)")
-            task_results[ht] = sr
+            task_results[ht] = (sr, eps)
 
             # Save head+params for inference timing (use first task)
             if task_name == args.tasks[0]:
@@ -730,9 +720,9 @@ if __name__ == "__main__":
 
         # 4. Evaluate FPO
         print(f"\n  [{step_idx+2}] Evaluating Flow + FPO ...")
-        sr_fpo = evaluate(fpo_head, params_fpo, task_name, args.eval_episodes, args.max_steps)
+        sr_fpo, eps_fpo = evaluate(fpo_head, params_fpo, task_name, args.eval_episodes, args.max_steps)
         print(f"      Flow+FPO Success Rate: {sr_fpo:.0%}")
-        task_results["flow_fpo"] = sr_fpo
+        task_results["flow_fpo"] = (sr_fpo, eps_fpo)
 
         if task_name == args.tasks[0]:
             inference_heads["flow_fpo"] = (fpo_head, params_fpo)
@@ -774,20 +764,22 @@ if __name__ == "__main__":
     avg = {mk: [] for mk in method_keys}
     for task_name in args.tasks:
         r = results[task_name]
-        srs = [r.get(mk, 0) for mk in method_keys]
+        srs = [r.get(mk, (0, []))[0] for mk in method_keys]
         best_val = max(srs)
         row = f"  {task_name:<{tc}}"
         for i, mk in enumerate(method_keys):
-            s = f"{r.get(mk, 0):.0%}"
+            sr, eps = r.get(mk, (0, []))
+            ep_str = "".join("✓" if e else "✗" for e in eps)
+            s = f"{sr:.0%} {ep_str}"
             if srs[i] == best_val and best_val > 0:
                 s += " *"
             row += f" | {s:>{hc}}"
-            avg[mk].append(r.get(mk, 0))
+            avg[mk].append(sr)
         print(row)
 
     print(sep)
     row = f"  {'AVERAGE':<{tc}}"
-    avgs = {mk: np.mean(avg[mk]) for mk in method_keys}
+    avgs = {mk: np.mean(avg[mk]) if avg[mk] else 0.0 for mk in method_keys}
     best_avg = max(avgs.values())
     for mk in method_keys:
         s = f"{avgs[mk]:.1%}"

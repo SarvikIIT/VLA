@@ -158,6 +158,8 @@ def parse_args():
     p.add_argument("--eval-episodes", type=int, default=20)
     p.add_argument("--max-steps", type=int, default=300)
     p.add_argument("--quick", action="store_true")
+    p.add_argument("--record", action="store_true",
+                   help="Record one episode per method per task as a GIF")
     return p.parse_args()
 
 
@@ -388,6 +390,48 @@ def evaluate(encoder, head, params, suite_name, task, n_eps, max_steps):
     return succ / max(n_eps, 1)
 
 
+def record_episode(encoder, head, params, suite_name, task, max_steps, out_path):
+    """Run one episode, capture agentview frames, save as MP4. Returns success bool."""
+    import imageio
+    env = make_env(suite_name, task)
+    predict = _make_predict(encoder, head)
+    rng = jax.random.PRNGKey(42)
+    obs = env.reset()
+    frames = []
+    success = False
+
+    for t in range(max_steps):
+        rng, k = jax.random.split(rng)
+
+        # grab raw agentview frame (uint8 H×W×3) before stepping
+        raw = np.asarray(obs[ENV_IMG_KEY])
+        if raw.dtype != np.uint8:
+            raw = (np.clip(raw, 0, 1) * 255).astype(np.uint8)
+        frames.append(raw)
+
+        a = np.asarray(predict(params, jnp.asarray(preprocess_obs(obs)), k), np.float64)
+        a = np.clip(a, -1.0, 1.0)
+        obs, rew, done, info = env.step(a)
+        if env_success(env, info):
+            success = True
+            break
+        if done:
+            break
+
+    env.close()
+    if frames:
+        # imageio-ffmpeg writes MP4; falls back to GIF if ffmpeg not found
+        try:
+            imageio.mimwrite(out_path, frames, fps=15, quality=8,
+                             codec="libx264", pixelformat="yuv420p")
+        except Exception:
+            gif_path = out_path.replace(".mp4", ".gif")
+            imageio.mimsave(gif_path, frames, fps=15)
+            out_path = gif_path
+        print(f"      Video saved: {out_path}  ({'SUCCESS' if success else 'fail'})")
+    return success
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  ADVANTAGES (returns-to-go, same as Meta-World script)
 # ═══════════════════════════════════════════════════════════════════════
@@ -600,6 +644,10 @@ if __name__ == "__main__":
             tr[ht] = sr
             if ti == 0:
                 inf_heads[ht] = (encoders[ht], heads[ht], p)
+            if args.record:
+                gif = os.path.join(os.path.dirname(__file__), f"sim_{task.name}_{ht}.gif")
+                record_episode(encoders[ht], heads[ht], p, args.suite, task,
+                               args.max_steps, gif)
 
         print(f"\n  [+] BC pre-training FPOActionHead ...")
         fpo_p = bc_pretrain(encoders["flow_fpo"], heads["flow_fpo"], imgs, acts,
@@ -613,6 +661,10 @@ if __name__ == "__main__":
         tr["flow_fpo"] = sr
         if ti == 0:
             inf_heads["flow_fpo"] = (encoders["flow_fpo"], heads["flow_fpo"], fpo_p)
+        if args.record:
+            gif = os.path.join(os.path.dirname(__file__), f"sim_{task.name}_fpo.gif")
+            record_episode(encoders["flow_fpo"], heads["flow_fpo"], fpo_p,
+                           args.suite, task, args.max_steps, gif)
 
         results[task.name] = tr
 

@@ -17,8 +17,8 @@ from octo.model.components.diffusion import cosine_beta_schedule, create_diffusi
 from octo.model.components.flow import create_flow_model
 from octo.model.components.fpo import (
     cfm_loss_from_pred,
-    fpo_ratio_from_diff,
-    ppo_clip_loss,
+    fpo_ratio_from_diff as _fpo_ratio_from_diff,
+    ppo_clip_loss as _ppo_clip_loss,
 )
 from octo.model.components.pca import fit_pca, transform_pca
 from octo.model.components.kmeans import fit_kmeans, assign_clusters
@@ -1156,8 +1156,17 @@ class FPOActionHead(nn.Module):
         )                                                          # (B, 1, A)
         return cfm_loss_from_pred(v_pred[:, 0, :], v_target)
 
-    fpo_ratio_from_diff = staticmethod(fpo_ratio_from_diff)
-    ppo_clip_loss = staticmethod(ppo_clip_loss)
+    @staticmethod
+    def fpo_ratio_from_diff(avg_loss_diff: ArrayLike) -> jax.Array:
+        """r_hat = exp(L_old - L_new), clamped. See octo.model.components.fpo."""
+        return _fpo_ratio_from_diff(avg_loss_diff)
+
+    @staticmethod
+    def ppo_clip_loss(
+        ratio: ArrayLike, advantages: ArrayLike, clip_eps: float,
+    ) -> Tuple[Array, Dict[str, Array]]:
+        """PPO-clip surrogate using the FPO ratio. See octo.model.components.fpo."""
+        return _ppo_clip_loss(ratio, advantages, clip_eps)
 
 
 class SinkhornFlowMatchActionHead(nn.Module):
